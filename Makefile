@@ -6,7 +6,13 @@ GO_VERSION=`cat $(BUILDDIR)/gotify-server-go-version`
 DOCKER_BUILD_IMAGE=gotify/build
 DOCKER_WORKDIR=/proj
 DOCKER_RUN=docker run --rm -v "$$PWD/.:${DOCKER_WORKDIR}" -v "`go env GOPATH`/pkg/mod/.:/go/pkg/mod:ro" -w ${DOCKER_WORKDIR}
-DOCKER_GO_BUILD=go build -mod=readonly -a -installsuffix cgo -ldflags "$$LD_FLAGS" -buildmode=plugin 
+DOCKER_GO_BUILD=go build -mod=readonly -a -installsuffix cgo -ldflags "$$LD_FLAGS" -buildmode=plugin
+
+# Change to your gotify plugin folder
+GOTIFY_PLUGIN_FOLDER=~/docker/volumes/gotify/data/plugins
+
+# Change to your platform
+PLATFORM=arm64
 
 download-tools:
 	GO111MODULE=off go get -u github.com/gotify/plugin-api/cmd/gomod-cap
@@ -36,5 +42,12 @@ build: build-linux-arm-7 build-linux-amd64 build-linux-arm64
 
 .PHONY: build
 
+## Local development
 up-gotify:
+	cp ${BUILDDIR}/${PLUGIN_NAME}-linux-${PLATFORM}.so ${GOTIFY_PLUGIN_FOLDER}
 	@docker compose -f ./docker/compose.yml -p gotify up -d
+
+down-gotify:
+	@docker compose -f ./docker/compose.yml -p gotify down
+
+dev: build-linux-${PLATFORM} down-gotify up-gotify
