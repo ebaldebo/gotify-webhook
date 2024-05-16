@@ -25,4 +25,5 @@ go.work
 
 # docker-compose for local development
 /docker/compose.yml
+build
 .DS_Store
