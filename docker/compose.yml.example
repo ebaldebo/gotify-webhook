@@ -1,0 +1,13 @@
+services:
+  gotify:
+    image: gotify/server # gotify/server-arm64
+    container_name: gotify
+    ports:
+      - "8080:80"
+    volumes:
+      - ~/docker/volumes/gotify/data:/app/data
+      - ~/docker/volumes/gotify/plugins:/app/plugins
+    environment:
+      - GOTIFY_DB_SQLITE=/app/data/gotify.db
+      - GOTIFY_DEFAULTUSER_NAME=change
+      - GOTIFY_DEFAULTUSER_PASS=me
