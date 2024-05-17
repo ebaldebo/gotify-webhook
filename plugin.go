@@ -21,7 +21,6 @@ func GetGotifyPluginInfo() plugin.Info {
 	return plugin.Info{
 		ModulePath:  "github.com/ebaldebo/gotify-webhook",
 		Name:        "gotify-webhook",
-		Version:     "0.1.0",
 		Author:      "ebaldebo",
 		License:     "MIT",
 		Description: "Forward messages to webhook(Discord, Slack, etc.)",
@@ -32,6 +31,7 @@ func GetGotifyPluginInfo() plugin.Info {
 type Plugin struct {
 	config    *Config
 	requester *Requester
+	disable   chan struct{}
 }
 
 func (p *Plugin) DefaultConfig() interface{} {
@@ -49,9 +49,10 @@ func (p *Plugin) Enable() error {
 	if p.config.GotifyHost == "" {
 		return errors.New("gotify host is required")
 	}
+	p.disable = make(chan struct{})
+	log.Println("enabling gotify-webhook plugin")
 	p.requester = NewRequester()
 	log.Println("Gotify host: ", p.config.GotifyHost)
-	// log.Println("Client token: ", p.config.ClientToken)
 	for _, webhook := range p.config.Webhooks {
 		log.Println("Webhook: ", webhook.AppId, webhook.Name, webhook.Url)
 	}
@@ -63,6 +64,8 @@ func (p *Plugin) Enable() error {
 
 // Disable implements plugin.Plugin
 func (p *Plugin) Disable() error {
+	log.Println("disabling gotify-webhook plugin")
+	close(p.disable)
 	return nil
 }
 
@@ -84,37 +87,50 @@ func (p *Plugin) HandleMessages() {
 		panic(err) // TODO: Make this retry instead of panic
 	}
 
+	messageChannel := make(chan []byte)
 	go func(c *websocket.Conn) {
-		var currentMessage PluginMessage
 		defer c.Close()
 		for {
-			select {
-			case <-interrupt:
-				log.Println("received interrupt, closing connection")
+			_, message, err := c.ReadMessage()
+			if err != nil {
+				log.Println("read error:", err)
+				close(messageChannel)
 				return
-			default:
-				_, message, err := c.ReadMessage()
-				if err != nil {
-					log.Println("read error:", err)
-					return
-				}
-				if err := json.Unmarshal(message, &currentMessage); err != nil {
-					log.Println("unable to unmarshal message:", err)
-					continue
-				}
+			}
+			messageChannel <- message
+		}
+	}(c)
 
-				log.Printf("received: %s\n", message)
-				for _, webhook := range p.config.Webhooks {
-					log.Println("current app id:", currentMessage.AppId, "webhook app id:", webhook.AppId)
-					if webhook.AppId == currentMessage.AppId {
-						if err := p.SendToWebhook(webhook, currentMessage.Message); err != nil {
-							log.Println("unable to send message to webhook:", err)
-						}
+	var currentMessage PluginMessage
+	for {
+		select {
+		case <-p.disable:
+			log.Println("plugin disabled, closing connection")
+			return
+		case <-interrupt:
+			log.Println("received interrupt, closing connection")
+			return
+		case message, ok := <-messageChannel:
+			if !ok {
+				log.Println("message channel closed, closing connection")
+				return
+			}
+			if err := json.Unmarshal(message, &currentMessage); err != nil {
+				log.Println("unable to unmarshal message:", err)
+				continue
+			}
+
+			log.Printf("received: %s\n", message)
+			for _, webhook := range p.config.Webhooks {
+				log.Println("current app id:", currentMessage.AppId, "webhook app id:", webhook.AppId)
+				if webhook.AppId == currentMessage.AppId {
+					if err := p.SendToWebhook(webhook, currentMessage.Message); err != nil {
+						log.Println("unable to send message to webhook:", err)
 					}
 				}
 			}
 		}
-	}(c)
+	}
 }
 
 func (p *Plugin) SendToWebhook(webhook *Webhook, message plugin.Message) error {
