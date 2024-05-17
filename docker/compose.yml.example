@@ -1,13 +1,20 @@
 services:
   gotify:
-    image: gotify/server # gotify/server-arm64
+    image: gotify/server
+    # platform: linux/amd64 # uncomment if running on arm64/arm7, arm images does not provide ca-certs
     container_name: gotify
     ports:
-      - "8080:80"
+      - "4433:443"
     volumes:
       - ~/docker/volumes/gotify/data:/app/data
-      - ~/docker/volumes/gotify/plugins:/app/plugins
+      - ~/docker/volumes/gotify/certs/cert.pem:/etc/ssl/certs/cert.pem
+      - ~/docker/volumes/gotify/certs/key.pem:/etc/ssl/private/key.pem
     environment:
       - GOTIFY_DB_SQLITE=/app/data/gotify.db
       - GOTIFY_DEFAULTUSER_NAME=change
       - GOTIFY_DEFAULTUSER_PASS=me
+      - GOTIFY_SERVER_SSL_ENABLED=true
+      - GOTIFY_SERVER_SSL_LISTENADDR=0.0.0.0
+      - GOTIFY_SERVER_SSL_PORT=443
+      - GOTIFY_SERVER_SSL_CERTFILE=/etc/ssl/certs/cert.pem
+      - GOTIFY_SERVER_SSL_CERTKEY=/etc/ssl/private/key.pem

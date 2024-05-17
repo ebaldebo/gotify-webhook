@@ -11,8 +11,8 @@ DOCKER_GO_BUILD=go build -mod=readonly -a -installsuffix cgo -ldflags "$$LD_FLAG
 # Change to your gotify plugin folder
 GOTIFY_PLUGIN_FOLDER=~/docker/volumes/gotify/data/plugins
 
-# Change to your platform
-PLATFORM=arm64
+# Change to your platform. Note: arm images wont work locally as they do not provide ca-certs
+PLATFORM=amd64
 
 download-tools:
 	GO111MODULE=off go get -u github.com/gotify/plugin-api/cmd/gomod-cap

@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/gotify/plugin-api"
@@ -25,7 +30,8 @@ func GetGotifyPluginInfo() plugin.Info {
 
 // Plugin is plugin instance
 type Plugin struct {
-	config *Config
+	config    *Config
+	requester *Requester
 }
 
 func (p *Plugin) DefaultConfig() interface{} {
@@ -43,8 +49,9 @@ func (p *Plugin) Enable() error {
 	if p.config.GotifyHost == "" {
 		return errors.New("gotify host is required")
 	}
+	p.requester = NewRequester()
 	log.Println("Gotify host: ", p.config.GotifyHost)
-	log.Println("Client token: ", p.config.ClientToken)
+	// log.Println("Client token: ", p.config.ClientToken)
 	for _, webhook := range p.config.Webhooks {
 		log.Println("Webhook: ", webhook.AppId, webhook.Name, webhook.Url)
 	}
@@ -70,22 +77,59 @@ func (p *Plugin) HandleMessages() {
 	signal.Notify(interrupt, syscall.SIGTERM)
 
 	url := p.config.GotifyHost + "/stream?token=" + p.config.ClientToken
+	time.Sleep(3 * time.Second)
+
 	c, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
-		panic(err)
+		panic(err) // TODO: Make this retry instead of panic
 	}
 
 	go func(c *websocket.Conn) {
+		var currentMessage PluginMessage
 		defer c.Close()
 		for {
-			_, message, err := c.ReadMessage()
-			if err != nil {
-				log.Println("read error:", err)
+			select {
+			case <-interrupt:
+				log.Println("received interrupt, closing connection")
 				return
+			default:
+				_, message, err := c.ReadMessage()
+				if err != nil {
+					log.Println("read error:", err)
+					return
+				}
+				if err := json.Unmarshal(message, &currentMessage); err != nil {
+					log.Println("unable to unmarshal message:", err)
+					continue
+				}
+
+				log.Printf("received: %s\n", message)
+				for _, webhook := range p.config.Webhooks {
+					log.Println("current app id:", currentMessage.AppId, "webhook app id:", webhook.AppId)
+					if webhook.AppId == currentMessage.AppId {
+						if err := p.SendToWebhook(webhook, currentMessage.Message); err != nil {
+							log.Println("unable to send message to webhook:", err)
+						}
+					}
+				}
 			}
-			log.Printf("received: %s\n", message)
 		}
 	}(c)
+}
+
+func (p *Plugin) SendToWebhook(webhook *Webhook, message plugin.Message) error {
+	requestBody := Message{Content: message.Message}
+
+	response, err := p.requester.Post(context.Background(), webhook.Url, requestBody, nil)
+	if err != nil {
+		return err
+	}
+
+	if response.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("unexpected response status code: %d", response.StatusCode)
+	}
+
+	return nil
 }
 
 func main() {
