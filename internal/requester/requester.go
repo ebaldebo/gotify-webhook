@@ -1,4 +1,4 @@
-package main
+package requester
 
 import (
 	"bytes"
@@ -13,9 +13,16 @@ type Requester struct {
 	*http.Client
 }
 
-func NewRequester() *Requester {
+type HttpResponse struct {
+	Status     string
+	StatusCode int
+	Header     http.Header
+	Body       []byte
+}
+
+func NewRequester(client *http.Client) *Requester {
 	return &Requester{
-		Client: http.DefaultClient,
+		Client: client,
 	}
 }
 

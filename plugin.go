@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ebaldebo/gotify-webhook/internal/connection"
+	"github.com/ebaldebo/gotify-webhook/internal/requester"
 	"github.com/gorilla/websocket"
 	"github.com/gotify/plugin-api"
 )
@@ -29,9 +31,10 @@ func GetGotifyPluginInfo() plugin.Info {
 
 // Plugin is plugin instance
 type Plugin struct {
-	config    *Config
-	requester *Requester
-	disable   chan struct{}
+	config     *Config
+	requester  *requester.Requester
+	connection *connection.Connection
+	disable    chan struct{}
 }
 
 func (p *Plugin) DefaultConfig() interface{} {
@@ -51,7 +54,6 @@ func (p *Plugin) Enable() error {
 	}
 	p.disable = make(chan struct{})
 	log.Println("enabling gotify-webhook plugin")
-	p.requester = NewRequester()
 	log.Println("Gotify host: ", p.config.GotifyHost)
 	for _, webhook := range p.config.Webhooks {
 		log.Println("Webhook: ", webhook.AppId, webhook.Name, webhook.Url)
@@ -71,7 +73,10 @@ func (p *Plugin) Disable() error {
 
 // NewGotifyPluginInstance creates a plugin instance for a user context.
 func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
-	return &Plugin{}
+	return &Plugin{
+		requester:  requester.NewRequester(&http.Client{Timeout: 5 * time.Second}),
+		connection: connection.NewConnection(),
+	}
 }
 
 func (p *Plugin) HandleMessages() {
@@ -80,12 +85,8 @@ func (p *Plugin) HandleMessages() {
 	signal.Notify(interrupt, syscall.SIGTERM)
 
 	url := p.config.GotifyHost + "/stream?token=" + p.config.ClientToken
-	time.Sleep(3 * time.Second)
 
-	c, _, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		panic(err) // TODO: Make this retry instead of panic
-	}
+	c := p.connection.CreateWebsocketConnection(url)
 
 	messageChannel := make(chan []byte)
 	go func(c *websocket.Conn) {

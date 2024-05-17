@@ -1,8 +1,6 @@
 package main
 
 import (
-	"net/http"
-
 	"github.com/gotify/plugin-api"
 )
 
@@ -16,13 +14,6 @@ type Webhook struct {
 	AppId int    `json:"app_id"`
 	Name  string `json:"name"`
 	Url   string `json:"url"`
-}
-
-type HttpResponse struct {
-	Status     string
-	StatusCode int
-	Header     http.Header
-	Body       []byte
 }
 
 type Message struct {
