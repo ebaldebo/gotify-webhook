@@ -40,16 +40,6 @@ type Plugin struct {
 	disable    chan struct{}
 }
 
-func (p *Plugin) DefaultConfig() interface{} {
-	return &Config{}
-}
-
-func (p *Plugin) ValidateAndSetConfig(c interface{}) error {
-	config := c.(*Config)
-	p.config = config
-	return nil
-}
-
 // Enable implements plugin.Plugin
 func (p *Plugin) Enable() error {
 	if p.config.GotifyHost == "" {
@@ -82,15 +72,29 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	}
 }
 
+func (p *Plugin) DefaultConfig() interface{} {
+	return &Config{}
+}
+
+func (p *Plugin) ValidateAndSetConfig(c interface{}) error {
+	config := c.(*Config)
+	p.config = config
+	return nil
+}
+
 func (p *Plugin) HandleMessages() {
 	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-	signal.Notify(interrupt, syscall.SIGTERM)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	url := p.config.GotifyHost + "/stream?token=" + p.config.ClientToken
 
 	c := p.connection.CreateWebsocketConnection(url)
 
+	messageChannel := readMessages(c)
+	p.processMessages(interrupt, messageChannel)
+}
+
+func readMessages(c *websocket.Conn) chan []byte {
 	messageChannel := make(chan []byte)
 	go func(c *websocket.Conn) {
 		defer c.Close()
@@ -104,7 +108,10 @@ func (p *Plugin) HandleMessages() {
 			messageChannel <- message
 		}
 	}(c)
+	return messageChannel
+}
 
+func (p *Plugin) processMessages(interrupt chan os.Signal, messageChannel chan []byte) {
 	var currentMessage PluginMessage
 	for {
 		select {
@@ -125,19 +132,23 @@ func (p *Plugin) HandleMessages() {
 			}
 
 			log.Printf("received: %s\n", message)
-			for _, webhook := range p.config.Webhooks {
-				log.Println("current app id:", currentMessage.AppId, "webhook app id:", webhook.AppId)
-				if webhook.AppId == currentMessage.AppId {
-					if err := p.SendToWebhook(webhook, currentMessage.Message); err != nil {
-						log.Println("unable to send message to webhook:", err)
-					}
-				}
+			p.processWebhooks(currentMessage)
+		}
+	}
+}
+
+func (p *Plugin) processWebhooks(currentMessage PluginMessage) {
+	for _, webhook := range p.config.Webhooks {
+		log.Println("current app id:", currentMessage.AppId, "webhook app id:", webhook.AppId)
+		if webhook.AppId == currentMessage.AppId {
+			if err := p.sendToWebhook(webhook, currentMessage.Message); err != nil {
+				log.Println("unable to send message to webhook:", err)
 			}
 		}
 	}
 }
 
-func (p *Plugin) SendToWebhook(webhook *Webhook, message plugin.Message) error {
+func (p *Plugin) sendToWebhook(webhook *Webhook, message plugin.Message) error {
 	requestBody := Message{Content: message.Message}
 
 	response, err := p.requester.Post(context.Background(), webhook.Url, requestBody, nil)
