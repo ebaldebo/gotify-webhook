@@ -9,7 +9,12 @@ import (
 	"time"
 )
 
-type Requester struct {
+type Requester interface {
+	Post(ctx context.Context, url string, payload any, headers map[string]string) (*HttpResponse, error)
+	Get(ctx context.Context, url string, headers map[string]string) (*HttpResponse, error)
+}
+
+type HttpRequester struct {
 	*http.Client
 }
 
@@ -20,21 +25,21 @@ type HttpResponse struct {
 	Body       []byte
 }
 
-func NewRequester(client *http.Client) *Requester {
-	return &Requester{
+func NewHttpRequester(client *http.Client) *HttpRequester {
+	return &HttpRequester{
 		Client: client,
 	}
 }
 
-func (r *Requester) Post(ctx context.Context, url string, payload any, headers map[string]string) (*HttpResponse, error) {
+func (r *HttpRequester) Post(ctx context.Context, url string, payload any, headers map[string]string) (*HttpResponse, error) {
 	return r.SendRequest(ctx, http.MethodPost, url, payload, headers)
 }
 
-func (r *Requester) Get(ctx context.Context, url string, headers map[string]string) (*HttpResponse, error) {
+func (r *HttpRequester) Get(ctx context.Context, url string, headers map[string]string) (*HttpResponse, error) {
 	return r.SendRequest(ctx, http.MethodGet, url, nil, headers)
 }
 
-func (r *Requester) SendRequest(ctx context.Context, method, url string, payload any, headers map[string]string) (*HttpResponse, error) {
+func (r *HttpRequester) SendRequest(ctx context.Context, method, url string, payload any, headers map[string]string) (*HttpResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

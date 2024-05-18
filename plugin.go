@@ -18,6 +18,9 @@ import (
 	"github.com/gotify/plugin-api"
 )
 
+var req requester.Requester = requester.NewHttpRequester(&http.Client{Timeout: 5 * time.Second})
+var con connection.Connection = connection.NewWebsocketConnection()
+
 // GetGotifyPluginInfo returns gotify plugin info
 func GetGotifyPluginInfo() plugin.Info {
 	return plugin.Info{
@@ -32,8 +35,8 @@ func GetGotifyPluginInfo() plugin.Info {
 // Plugin is plugin instance
 type Plugin struct {
 	config     *Config
-	requester  *requester.Requester
-	connection *connection.Connection
+	requester  requester.Requester
+	connection connection.Connection
 	disable    chan struct{}
 }
 
@@ -74,8 +77,8 @@ func (p *Plugin) Disable() error {
 // NewGotifyPluginInstance creates a plugin instance for a user context.
 func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	return &Plugin{
-		requester:  requester.NewRequester(&http.Client{Timeout: 5 * time.Second}),
-		connection: connection.NewConnection(),
+		requester:  req,
+		connection: con,
 	}
 }
 

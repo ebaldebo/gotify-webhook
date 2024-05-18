@@ -8,13 +8,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type Connection struct{}
-
-func NewConnection() *Connection {
-	return &Connection{}
+type Connection interface {
+	CreateWebsocketConnection(url string) *websocket.Conn
 }
 
-func (c *Connection) CreateWebsocketConnection(url string) *websocket.Conn {
+type WebSocketConnection struct{}
+
+func NewWebsocketConnection() *WebSocketConnection {
+	return &WebSocketConnection{}
+}
+
+func (c *WebSocketConnection) CreateWebsocketConnection(url string) *websocket.Conn {
 	var connection *websocket.Conn
 	var err error
 	for i := 0; i < 3; i++ {
