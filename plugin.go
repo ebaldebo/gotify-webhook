@@ -42,16 +42,7 @@ type Plugin struct {
 
 // Enable implements plugin.Plugin
 func (p *Plugin) Enable() error {
-	if p.config.GotifyHost == "" {
-		return errors.New("gotify host is required")
-	}
 	p.disable = make(chan struct{})
-	log.Println("enabling gotify-webhook plugin")
-	log.Println("Gotify host: ", p.config.GotifyHost)
-	for _, webhook := range p.config.Webhooks {
-		log.Println("Webhook: ", webhook.AppId, webhook.Name, webhook.Url)
-	}
-
 	go p.HandleMessages()
 
 	return nil
@@ -59,7 +50,6 @@ func (p *Plugin) Enable() error {
 
 // Disable implements plugin.Plugin
 func (p *Plugin) Disable() error {
-	log.Println("disabling gotify-webhook plugin")
 	close(p.disable)
 	return nil
 }
@@ -73,11 +63,23 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 }
 
 func (p *Plugin) DefaultConfig() interface{} {
-	return &Config{}
+	return &Config{
+		GotifyHost: "wss://localhost",
+	}
 }
 
 func (p *Plugin) ValidateAndSetConfig(c interface{}) error {
 	config := c.(*Config)
+	if config.ClientToken == "" {
+		return errors.New("clienttoken is required")
+	}
+
+	for _, webhook := range config.Webhooks {
+		if webhook.AppId == 0 {
+			return errors.New("appid is required")
+		}
+	}
+
 	p.config = config
 	return nil
 }
@@ -101,7 +103,6 @@ func readMessages(c *websocket.Conn) chan []byte {
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				log.Println("read error:", err)
 				close(messageChannel)
 				return
 			}
@@ -116,14 +117,11 @@ func (p *Plugin) processMessages(interrupt chan os.Signal, messageChannel chan [
 	for {
 		select {
 		case <-p.disable:
-			log.Println("plugin disabled, closing connection")
 			return
 		case <-interrupt:
-			log.Println("received interrupt, closing connection")
 			return
 		case message, ok := <-messageChannel:
 			if !ok {
-				log.Println("message channel closed, closing connection")
 				return
 			}
 			if err := json.Unmarshal(message, &currentMessage); err != nil {
@@ -139,7 +137,6 @@ func (p *Plugin) processMessages(interrupt chan os.Signal, messageChannel chan [
 
 func (p *Plugin) processWebhooks(currentMessage PluginMessage) {
 	for _, webhook := range p.config.Webhooks {
-		log.Println("current app id:", currentMessage.AppId, "webhook app id:", webhook.AppId)
 		if webhook.AppId == currentMessage.AppId {
 			if err := p.sendToWebhook(webhook, currentMessage.Message); err != nil {
 				log.Println("unable to send message to webhook:", err)
@@ -149,7 +146,10 @@ func (p *Plugin) processWebhooks(currentMessage PluginMessage) {
 }
 
 func (p *Plugin) sendToWebhook(webhook *Webhook, message plugin.Message) error {
-	requestBody := Message{Content: message.Message}
+	requestBody := WebhookMessage{
+		Title:   message.Title,
+		Content: message.Message,
+	}
 
 	response, err := p.requester.Post(context.Background(), webhook.Url, requestBody, nil)
 	if err != nil {

@@ -16,7 +16,8 @@ type Webhook struct {
 	Url   string `json:"url"`
 }
 
-type Message struct {
+type WebhookMessage struct {
+	Title   string `json:"title"`
 	Content string `json:"content"`
 }
 
